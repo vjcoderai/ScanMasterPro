@@ -1,0 +1,44 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ThemeType } from '../types';
+import { Themes, ThemeColors, SETTINGS_STORAGE_KEY } from '../constants';
+
+interface ThemeContextType {
+  theme: ThemeType;
+  colors: ThemeColors;
+  setTheme: (t: ThemeType) => void;
+}
+
+const ThemeContext = createContext<ThemeContextType>({
+  theme: 'light',
+  colors: Themes.light,
+  setTheme: () => {},
+});
+
+export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [theme, setThemeState] = useState<ThemeType>('light');
+
+  useEffect(() => {
+    AsyncStorage.getItem(SETTINGS_STORAGE_KEY).then((raw) => {
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (s.theme) setThemeState(s.theme);
+      }
+    });
+  }, []);
+
+  const setTheme = async (t: ThemeType) => {
+    setThemeState(t);
+    const raw = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
+    const s = raw ? JSON.parse(raw) : {};
+    await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ ...s, theme: t }));
+  };
+
+  return (
+    <ThemeContext.Provider value={{ theme, colors: Themes[theme], setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+};
+
+export const useTheme = () => useContext(ThemeContext);

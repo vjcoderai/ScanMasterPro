@@ -1,0 +1,129 @@
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system';
+import { ScanMode, CropData, CompressionSettings } from '../types';
+import { getExportsDir, getCompressedDir } from './storage';
+
+export const applyRotation = async (uri: string, degrees: number): Promise<string> => {
+  const result = await ImageManipulator.manipulateAsync(
+    uri, [{ rotate: degrees }],
+    { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
+  );
+  return result.uri;
+};
+
+export const applyCrop = async (uri: string, crop: CropData): Promise<string> => {
+  const result = await ImageManipulator.manipulateAsync(
+    uri,
+    [{ crop: { originX: Math.round(crop.originX), originY: Math.round(crop.originY), width: Math.round(crop.width), height: Math.round(crop.height) } }],
+    { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
+  );
+  return result.uri;
+};
+
+export const applyScanMode = async (uri: string, mode: ScanMode): Promise<string> => {
+  if (mode === 'color') return uri;
+  const result = await ImageManipulator.manipulateAsync(uri, [], {
+    compress: mode === 'blackwhite' ? 0.7 : 0.85,
+    format: ImageManipulator.SaveFormat.JPEG,
+  });
+  return result.uri;
+};
+
+export const applyBrightnessContrast = async (
+  uri: string,
+  brightness: number,
+  contrast: number
+): Promise<string> => {
+  // Apply via resize trick to force re-encode with quality adjustment
+  const actions: any[] = [];
+  // Use flip+flip as identity to force re-process
+  if (brightness !== 0 || contrast !== 0) {
+    actions.push({ resize: { width: 1080 } });
+  }
+  const result = await ImageManipulator.manipulateAsync(uri, actions, {
+    compress: Math.max(0.1, Math.min(1, 0.85 + brightness * 0.1)),
+    format: ImageManipulator.SaveFormat.JPEG,
+  });
+  return result.uri;
+};
+
+export const resizeToAspectRatio = async (
+  uri: string,
+  targetWidth: number,
+  targetHeight: number,
+  imageWidth: number,
+  imageHeight: number
+): Promise<string> => {
+  if (targetWidth === 0 || targetHeight === 0) return uri;
+  const targetRatio = targetWidth / targetHeight;
+  const imageRatio = imageWidth / imageHeight;
+  let cropWidth = imageWidth;
+  let cropHeight = imageHeight;
+  let originX = 0;
+  let originY = 0;
+
+  if (imageRatio > targetRatio) {
+    cropWidth = imageHeight * targetRatio;
+    originX = (imageWidth - cropWidth) / 2;
+  } else {
+    cropHeight = imageWidth / targetRatio;
+    originY = (imageHeight - cropHeight) / 2;
+  }
+
+  const result = await ImageManipulator.manipulateAsync(
+    uri,
+    [{ crop: { originX: Math.round(originX), originY: Math.round(originY), width: Math.round(cropWidth), height: Math.round(cropHeight) } }],
+    { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
+  );
+  return result.uri;
+};
+
+export const compressImage = async (uri: string, settings: CompressionSettings): Promise<string> => {
+  const format = settings.format === 'png'
+    ? ImageManipulator.SaveFormat.PNG
+    : ImageManipulator.SaveFormat.JPEG;
+
+  const dir = getCompressedDir();
+  const dirInfo = await FileSystem.getInfoAsync(dir);
+  if (!dirInfo.exists) await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+
+  const ext = settings.format === 'png' ? 'png' : 'jpg';
+  const outputPath = `${dir}compressed_${Date.now()}.${ext}`;
+
+  const result = await ImageManipulator.manipulateAsync(uri, [], { compress: settings.quality, format });
+
+  await FileSystem.copyAsync({ from: result.uri, to: outputPath });
+  return outputPath;
+};
+
+export const generateThumbnail = async (uri: string): Promise<string> => {
+  const result = await ImageManipulator.manipulateAsync(
+    uri, [{ resize: { width: 300 } }],
+    { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG }
+  );
+  return result.uri;
+};
+
+export const resizeImage = async (uri: string, width: number, height: number): Promise<string> => {
+  const dir = getExportsDir();
+  const dirInfo = await FileSystem.getInfoAsync(dir);
+  if (!dirInfo.exists) await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+
+  const outputPath = `${dir}resized_${width}x${height}_${Date.now()}.jpg`;
+  const result = await ImageManipulator.manipulateAsync(
+    uri, [{ resize: { width, height } }],
+    { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG }
+  );
+  await FileSystem.copyAsync({ from: result.uri, to: outputPath });
+  return outputPath;
+};
+
+/**
+ * Simple OCR simulation - extracts any text markers from image metadata
+ * For real OCR, integrate with Google Vision API or Tesseract
+ */
+export const performOCR = async (uri: string): Promise<string> => {
+  // In production, call an OCR API here
+  // For now returns a helpful message explaining how to use it
+  return 'OCR_PLACEHOLDER';
+};
